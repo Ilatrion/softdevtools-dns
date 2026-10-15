@@ -1,0 +1,4 @@
+subdomain: maleeva-anastasia
+type: CNAME
+target: maleeclvanastya01-bot.github.io
+repository: https://github.com/maleeclvanastya01-bot/my-first-page
