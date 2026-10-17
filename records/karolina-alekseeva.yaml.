@@ -1,0 +1,4 @@
+subdomain: karolina-alekseeva
+type: CNAME
+target: k6703553.github.io
+repository: https://github.com/k6703553/my-first-page
