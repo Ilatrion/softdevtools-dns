@@ -1,0 +1,4 @@
+subdomain: yuugxxn
+type: CNAME
+target: yuugxxn.github.io
+repository: https://github.com/yuugxxn/my-first-page
