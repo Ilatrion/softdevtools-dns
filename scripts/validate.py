@@ -44,7 +44,12 @@ class RequestLoader(yaml.SafeLoader):
         result = {}
         for key_node, value_node in node.value:
             key = self.construct_object(key_node, deep=deep)
-            if key in result:
+            try:
+                duplicate = key in result
+            except TypeError:
+                # Ключ-список нельзя положить в словарь: сообщаем как ошибку YAML.
+                raise yaml.YAMLError("YAML key must be a scalar") from None
+            if duplicate:
                 raise yaml.YAMLError(f"duplicate YAML key: {key}")
             result[key] = self.construct_object(value_node, deep=deep)
         return result
@@ -136,6 +141,9 @@ def parse_record(
         data = yaml.load(text, Loader=RequestLoader)
     except yaml.YAMLError as exc:
         return None, [_yaml_error(broken, exc, positions)], positions
+    except TypeError as exc:
+        # Страховка: неожиданный тип в YAML не должен валить проверку трейсбеком.
+        return None, [_key_type_error(broken, exc)], positions
 
     if data is None:
         return None, [
@@ -216,12 +224,26 @@ def parse_record(
     return data, [], positions
 
 
+def _key_type_error(broken, exc: Exception) -> ValidationError:
+    """Имя поля не строка (например, список): понятная ошибка вместо трейсбека."""
+    return broken(
+        "yaml.key_type",
+        "Имя поля",
+        "Имя поля в заявке должно быть текстом.",
+        details=f"Техническое пояснение: {exc}",
+        hint="Поля заявки — четыре строки вида «subdomain: ivan-ivanov». "
+        f"Пример: {EXAMPLE_REQUEST}.",
+    )
+
+
 def _yaml_error(broken, exc: yaml.YAMLError, positions) -> ValidationError:
     """Понятное объяснение вместо технического текста PyYAML."""
     context = getattr(exc, "context", None) or ""
     problem = (getattr(exc, "problem", None) or str(exc)).strip()
     described = f"{context} {problem}".strip()
     line = _problem_line(exc)
+    if "key must be a scalar" in described:
+        return _key_type_error(broken, exc)
     if problem.startswith("duplicate YAML key: "):
         field = problem.removeprefix("duplicate YAML key: ")
         found = positions.get(field, [])

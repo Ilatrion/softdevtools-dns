@@ -122,6 +122,13 @@ class ParseRecordTests(unittest.TestCase):
         self.assertIsNone(record)
         self.assertEqual(codes(errors), ["file.too_large"])
 
+    def test_unhashable_key_is_reported_not_raised(self):
+        record, errors, _ = self.parse("? [a, b]\n: value\n")
+        self.assertIsNone(record)
+        self.assertEqual(codes(errors), ["yaml.key_type"])
+        self.assertIn("Имя поля", errors[0].message)
+        self.assertIn("examples/ivan-ivanov.yaml", errors[0].hint)
+
     def test_not_utf8_file(self):
         self.path.write_bytes("subdomain: Иван\n".encode("cp1251"))
         record, errors, _ = parse_record(self.path)
@@ -370,6 +377,23 @@ class ValidateCliTests(unittest.TestCase):
         result = self.run_cli({"GITHUB_STEP_SUMMARY": str(summary)})
         self.assertEqual(result.returncode, 1)
         self.assertIn("Заявка не прошла проверку", summary.read_text(encoding="utf-8"))
+
+    def test_student_value_cannot_forge_workflow_commands(self):
+        (self.root / "records" / "ivan.yaml").write_text(
+            'subdomain: "ivan\\n::warning::подделка"\n'
+            "type: CNAME\ntarget: ivan123.github.io\n"
+            "repository: https://github.com/ivan123/my-lab-site\n",
+            encoding="utf-8",
+        )
+        result = self.run_cli({"GITHUB_ACTIONS": "true"})
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("::error file=records/ivan.yaml", result.stdout)
+        # Студенческое значение не начинает строку: команд workflow, кроме наших,
+        # в выводе быть не должно.
+        commands = [line for line in result.stdout.splitlines() if line.startswith("::")]
+        self.assertTrue(commands)
+        for line in commands:
+            self.assertTrue(line.startswith("::error "), line)
 
     def test_annotations_flag_works_outside_actions(self):
         (self.root / "records" / "ivan.yaml").write_text(

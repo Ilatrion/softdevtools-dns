@@ -26,6 +26,9 @@ STUDENT_GUIDE = "docs/student.md"
 # Имя заявки: латинские строчные буквы, цифры и дефис внутри, расширение .yaml.
 RECORD_NAME = re.compile(r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.yaml\Z")
 
+# Разметка GFM: значения из заявки не должны её создавать в доверенной сводке.
+MARKDOWN_SPECIALS = frozenset("\\`*_[]()<>|~&")
+
 
 @dataclass(frozen=True)
 class ValidationError:
@@ -48,14 +51,18 @@ class ValidationError:
         return self.path
 
     def log_lines(self) -> list[str]:
-        """Человекочитаемый блок: студент читает его в журнале шага."""
+        """Человекочитаемый блок: студент читает его в журнале шага.
+
+        Готовые строки всегда однострочные: значение из заявки не должно попасть
+        в начало строки, иначе runner примет его за команду workflow.
+        """
         header = f"❌ {self.location()}" if self.location() else "❌"
         lines = [f"{header} — {self.title}", f"   {self.message}"]
         if self.details:
             lines.extend(f"   {part}" for part in self.details.splitlines() if part.strip())
         if self.hint:
             lines.append(f"💡 {self.hint}")
-        return lines
+        return [single_line(line) for line in lines]
 
     def annotation(self) -> str:
         """Команда workflow: аннотация к файлу и строке в интерфейсе проверок."""
@@ -73,6 +80,13 @@ class ValidationError:
         if self.hint:
             body.append(f"💡 {self.hint}")
         return f"::error {','.join(properties)}::{escape_data(chr(10).join(body))}"
+
+
+def single_line(text: str) -> str:
+    """Одна строка без управляющих символов: журнал, а не поток команд."""
+    return "".join(
+        " " if character in "\r\n" or character < " " else character for character in text
+    )
 
 
 def escape_property(value: str) -> str:
@@ -213,12 +227,15 @@ def record_filename_advice(name: str) -> tuple[str | None, str | None]:
 
 
 def _plain(text: str) -> str:
-    """Безопасный для markdown текст: без html и управляющих символов."""
-    cleaned = "".join(" " if character < " " and character != "\n" else character for character in text)
-    return cleaned.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    """Одна строка без html и markdown-разметки: сводка доверенная, текст — нет."""
+    flattened = single_line(text)
+    return "".join(
+        f"\\{character}" if character in MARKDOWN_SPECIALS else character
+        for character in flattened
+    )
 
 
 def _code_span(text: str) -> str:
     """Код-спан в сводке: имя файла приходит от студента, кавычки обезвреживаем."""
-    cleaned = _plain(text).replace("`", "'")
+    cleaned = single_line(text).replace("`", "'")
     return f"`{cleaned}`"

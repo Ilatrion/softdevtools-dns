@@ -63,6 +63,20 @@ class ValidationErrorTests(unittest.TestCase):
         )
         self.assertIn("Перенос%0Aстроки и 100%25", annotation)
 
+    def test_log_lines_cannot_forge_workflow_commands(self):
+        lines = ValidationError(
+            code="subdomain.invalid",
+            title="Поле subdomain",
+            message='Имя «ivan\n::warning::подделка» не подходит.',
+            path="records/ivan.yaml",
+            line=1,
+            hint="Уберите пробелы.\r\n::error::ещё команда",
+        ).log_lines()
+        for line in lines:
+            self.assertNotIn("\n", line)
+            self.assertNotIn("\r", line)
+            self.assertFalse(line.startswith("::"), line)
+
     def test_annotation_skips_line_without_position(self):
         annotation = ValidationError(code="x", title="Заявка", message="Нет файла.").annotation()
         self.assertEqual(annotation, "::error title=Заявка::Нет файла.")
@@ -103,10 +117,31 @@ class SummaryTests(unittest.TestCase):
             line=1,
         )
         summary = summary_markdown([hostile], repository="denrad/softdevtools-dns")
-        self.assertNotIn("<img", summary)
-        self.assertIn("&lt;img", summary)
+        # Имя файла остаётся текстом внутри код-спана, а не разметкой.
+        self.assertIn("`records/<img src=x onerror=y>'boom'.yaml:1`", summary)
         self.assertNotIn("`boom`", summary)
         self.assertIn("https://github.com/denrad/softdevtools-dns/blob/main/docs/student.md", summary)
+
+    def test_summary_escapes_markdown_and_newlines_in_values(self):
+        hostile = ValidationError(
+            code="subdomain.invalid",
+            title="Поле subdomain",
+            message='Имя «[клик](https://attacker.example)\n# заголовок» не подходит.',
+            path="records/ivan.yaml",
+            line=1,
+            details="Сейчас: `ivan\n\n- чужой пункт`",
+            hint="Подставьте обычный текст.",
+        )
+        summary = summary_markdown([hostile])
+        self.assertNotIn("](https://attacker.example)", summary)
+        self.assertIn(r"\[клик\]\(https://attacker.example\)", summary)
+        self.assertIn("чужой пункт", summary)
+        self.assertNotIn("\n# ", summary)
+        self.assertNotIn("\n- чужой пункт", summary)
+
+    def test_summary_keeps_code_spans_clean(self):
+        summary = summary_markdown([error(0)])
+        self.assertIn("- `records/ivan-0.yaml:1` —", summary)
 
     def test_write_step_summary_uses_environment(self):
         with TemporaryDirectory() as temp:
