@@ -10,6 +10,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
+from scripts.messages import render_text
 from scripts.validate import parse_record, validate_records
 
 
@@ -82,12 +83,13 @@ def reconcile(root: Path, client: CloudflareClient, *, apply: bool = False) -> l
     """Validate everything first; plan or create only missing CNAMEs."""
     errors = validate_records(root)
     if errors:
-        raise DnsError("DNS requests invalid:\n" + "\n".join(errors))
+        raise DnsError("Заявки не прошли проверку:\n" + render_text(errors))
 
     actions = []
     to_create = []
     for path in sorted((root / "records").glob("*.yaml")):
-        record, _ = parse_record(path)  # Full-tree validation above already succeeded.
+        # Полная проверка дерева выше уже прошла, поэтому ошибок здесь быть не может.
+        record, _errors, _positions = parse_record(path)
         name = f"{record['subdomain']}.{ZONE}"
         target = record["target"].lower()
         existing = client.records_at(name)
