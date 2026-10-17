@@ -88,7 +88,7 @@ class ApplyDnsTests(unittest.TestCase):
     def test_invalid_tree_blocks_api_access(self):
         self.add_record("www", "ivan123.github.io")
         client = FakeClient()
-        with self.assertRaisesRegex(DnsError, "DNS requests invalid"):
+        with self.assertRaisesRegex(DnsError, "Заявки не прошли проверку"):
             reconcile(self.root, client, apply=True)
         self.assertEqual(client.created, [])
 
